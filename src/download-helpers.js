@@ -50,6 +50,9 @@ module.exports = async function downloadReport(url, format, width, height, filen
       else if (authType === AUTH.COGNITO) {
         await cognitoAuthentication(page, overridePage, url, username, password, tenant, multitenancy);
       }
+      else if (authType === AUTH.OPENID) {
+        await openidAuthentication(page, url, username, password, tenant, multitenancy);
+      }
       spinner.info('Credentials are verified');
     }
     // no auth
@@ -326,6 +329,57 @@ const cognitoAuthentication = async (page, overridePage, url, username, password
       spinner.fail('Invalid tenant');
       exit(1);
     }
+  }
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  await page.reload({ waitUntil: 'networkidle0' });
+}
+
+const openidAuthentication = async (page, url, username, password, tenant, multitenancy) => {
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  let refUrl;
+  await getUrl(url).then((value) => {
+    refUrl = value;
+  });
+  await page.type('[name="username"]', username);
+  try {
+    //default case
+    await page.waitForSelector('[name="password"]', {
+      visible: true,
+      timeout: 1000
+    })
+  } catch {
+    //realm case (password hidden)
+    await page.click('[name="login"]')
+  }
+  await page.type('[name="password"]', password);
+  await page.click('[name="login"]')
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  const tenantSelection = await page.$('Select your tenant');
+  try {
+    if (multitenancy === true && tenantSelection !== null) {
+      if (tenant === 'global' || tenant === 'private') {
+        await page.click('label[for=' + tenant + ']');
+      } else {
+        await page.click('label[for="custom"]');
+        await page.click('button[data-test-subj="comboBoxToggleListButton"]');
+        await page.type('input[data-test-subj="comboBoxSearchInput"]', tenant);
+      }
+    } else {
+      if ((await page.$('[name="login"]')) !== null)
+        throw new Error('Invalid credentials');
+    }
+  }
+  catch (err) {
+    spinner.fail('Invalid username or password');
+    exit(1);
+  }
+
+  if (multitenancy === true && tenantSelection !== null) {
+    await page.waitForTimeout(5000);
+    await page.click('button[data-test-subj="confirm"]');
+    await page.waitForTimeout(25000);
   }
   await page.goto(url, { waitUntil: 'networkidle0' });
   await page.reload({ waitUntil: 'networkidle0' });
