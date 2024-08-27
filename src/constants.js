@@ -41,6 +41,7 @@ const AUTH = {
   BASIC: 'basic',
   COGNITO: 'cognito',
   SAML: 'saml',
+  OPENID: 'openid',
   NONE: 'none',
 }
 

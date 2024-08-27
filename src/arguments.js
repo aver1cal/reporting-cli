@@ -24,7 +24,7 @@ async function getCommandArguments() {
             .env(ENV_VAR.URL))
         .addOption(new Option('-a, --auth <type>', 'authentication type for the report.')
             .default(DEFAULT_AUTH)
-            .choices([AUTH.BASIC, AUTH.COGNITO, AUTH.SAML]))
+            .choices([AUTH.BASIC, AUTH.COGNITO, AUTH.SAML, AUTH.OPENID]))
         .addOption(new Option('-c, --credentials <username:password>', 'login credentials')
             .env(ENV_VAR.USERNAME + ' and ' + ENV_VAR.PASSWORD))
         .addOption(new Option('-t, --tenant <tenant>', 'tenants in opensearch dashboards')
