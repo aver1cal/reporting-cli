@@ -50,6 +50,9 @@ module.exports = async function downloadReport(url, format, width, height, filen
       else if (authType === AUTH.COGNITO) {
         await cognitoAuthentication(page, overridePage, url, username, password, tenant, multitenancy);
       }
+      else if (authType === AUTH.OPENID) {
+        await openidAuthentication(page, url, username, password, tenant, multitenancy);
+      }
       spinner.info('Credentials are verified');
     }
     // no auth
@@ -326,6 +329,56 @@ const cognitoAuthentication = async (page, overridePage, url, username, password
       spinner.fail('Invalid tenant');
       exit(1);
     }
+  }
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  await page.reload({ waitUntil: 'networkidle0' });
+}
+
+const openidAuthentication = async (page, url, username, password, tenant, multitenancy) => {
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('[name="username"]', {timeout: 20000}).catch(async e => {
+    await page.reload({ waitUntil: 'networkidle0' });
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  });
+  await page.type('[name="username"]', username);
+  //check for realms home idp
+  await page.waitForSelector('[name="password"]', {timeout: 5000}).catch(async e => {
+    await page.click('[name="login"]');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  });
+  await page.type('[name="password"]', password);
+  await page.click('[name="login"]')
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  let tenantSelection = false;
+  await page.waitForSelector('Select your tenant', {timeout: 5000}).then(async () => {
+    try {
+      if (multitenancy === true) {
+        tenantSelection = true;
+        if (tenant === 'global' || tenant === 'private') {
+          await page.click('label[for=' + tenant + ']');
+        } else {
+          await page.click('label[for="custom"]');
+          await page.click('button[data-test-subj="comboBoxToggleListButton"]');
+          await page.type('input[data-test-subj="comboBoxSearchInput"]', tenant);
+        }
+      } else {
+        if ((await page.$('[name="login"]')) !== null)
+          throw new Error('Invalid credentials');
+      }
+    }
+    catch (err) {
+      spinner.fail('Invalid username or password');
+      exit(1);
+    }
+  }).catch(async e => {
+    //no tenant selection
+  });
+  
+  if (multitenancy === true && tenantSelection) {
+    await page.waitForTimeout(5000);
+    await page.click('button[data-test-subj="confirm"]');
+    await page.waitForTimeout(25000);
   }
   await page.goto(url, { waitUntil: 'networkidle0' });
   await page.reload({ waitUntil: 'networkidle0' });
