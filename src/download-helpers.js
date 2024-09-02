@@ -119,16 +119,16 @@ module.exports = async function downloadReport(url, format, width, height, filen
         fullPage: true,
       });
     } else if (format === FORMAT.CSV) {
+      let catcher = page.waitForResponse(r => r.request().url().includes('/opensearch-with-long-numerals'));
+      await page.reload({ waitUntil: 'networkidle0' });
       await page.click('button[id="downloadReport"]');
       await new Promise(resolve => setTimeout(resolve, 1000));
       const is_enabled = await page.evaluate(() => document.querySelector('#generateCSV[disabled]') == null);
       // Check if generateCSV button is enabled.
       if (is_enabled) {
-        let catcher = page.waitForResponse(r => r.request().url().includes('/api/reporting/generateReport'));
-        page.click('button[id="generateCSV"]');
         let response = await catcher;
         let payload = await response.json();
-        buffer = payload.data;
+        buffer = await formatCsv(payload.rawResponse.hits.hits);
       } else {
         spinner.fail('Please save search and retry');
         process.exit(1);
@@ -400,3 +400,30 @@ const readStreamToFile = async (
     })
   }
 };
+
+const formatCsv = async (data) => {
+  let columns = [];
+  let content = "";
+  if (data) {
+    Object.keys(data[0].fields).forEach(field => {
+      if (field.startsWith('-')) columns.push(field);
+    });
+    content += columns.toString() + "\n";
+    data.forEach(document => {
+      columns.map(column => {
+        content += escape(String(document.fields[column])) + ','
+      })
+      content = content.slice(0, -1) + "\n";
+    })
+  }
+  return content;
+};
+
+function escape(val) {
+  const nonAlphaNumRE = /[^a-zA-Z0-9]/;
+  const allDoubleQuoteRE = /"/g;
+  if (nonAlphaNumRE.test(val)) {
+    val = '"' + val.replace(allDoubleQuoteRE, '""') + '"';
+  }
+  return val;
+}
