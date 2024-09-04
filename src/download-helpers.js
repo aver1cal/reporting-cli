@@ -32,10 +32,8 @@ module.exports = async function downloadReport(url, format, width, height, filen
         TZ: process.env.TZ || 'UTC',
       },
     });
-    spinner.info('test9');
     const page = await browser.newPage();
     const overridePage = await browser.newPage();
-    spinner.info('test10');
     page.setDefaultNavigationTimeout(0);
     page.setDefaultTimeout(timeout);
     overridePage.setDefaultNavigationTimeout(0);
@@ -68,8 +66,6 @@ module.exports = async function downloadReport(url, format, width, height, filen
       width: width,
       height: height,
     });
-    
-    spinner.info('test11');
 
     const reportSource = getReportSourceFromURL(url);
 
@@ -98,8 +94,6 @@ module.exports = async function downloadReport(url, format, width, height, filen
         REPORT_TYPE
       );
     }
-    
-    spinner.info('test12');
 
     // force wait for any resize to load after the above DOM modification.
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -350,23 +344,21 @@ const openidAuthentication = async (page, url, username, password, tenant, multi
   spinner.info('test1');
   await page.type('[name="username"]', username);
   spinner.info('test2');
-  try {
-    //default case
-    await page.waitForSelector('[name="password"]', {
-      visible: true,
-      timeout: 1000
-    })
-  } catch {
-    //realm case (password hidden)
-    await page.click('[name="login"]')
+  const password_visible = await page.$('[name="password"]') !== null;
+  if(!password_visible) {
+    spinner.info('test66');
+    await page.click('[name="login"]');
+    await new Promise(resolve => setTimeout(resolve, 5000));
   }
   spinner.info('test3');
   await page.type('[name="password"]', password);
-  await page.click('[name="login"]')
   spinner.info('test4');
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  await page.goto(url, { waitUntil: 'networkidle0' });
+  await page.click('[name="login"]')
   spinner.info('test5');
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  spinner.info('test6');
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  spinner.info('test7');
   const tenantSelection = await page.$('Select your tenant');
   try {
     if (multitenancy === true && tenantSelection !== null) {
@@ -386,18 +378,13 @@ const openidAuthentication = async (page, url, username, password, tenant, multi
     spinner.fail('Invalid username or password');
     exit(1);
   }
-  
-  spinner.info('test6');
-
   if (multitenancy === true && tenantSelection !== null) {
     await page.waitForTimeout(5000);
     await page.click('button[data-test-subj="confirm"]');
     await page.waitForTimeout(25000);
   }
-  spinner.info('test7');
   await page.goto(url, { waitUntil: 'networkidle0' });
   await page.reload({ waitUntil: 'networkidle0' });
-  spinner.info('test8');
 }
 
 const readStreamToFile = async (
