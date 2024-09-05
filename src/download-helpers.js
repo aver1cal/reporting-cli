@@ -66,8 +66,12 @@ module.exports = async function downloadReport(url, format, width, height, filen
       width: width,
       height: height,
     });
+    
+    spinner.info("test10");
 
     const reportSource = getReportSourceFromURL(url);
+    
+    spinner.info("test11");
 
     // if its an OpenSearch report, remove extra elements.
     if (reportSource !== 'Other' && reportSource !== 'Saved search') {
@@ -94,10 +98,13 @@ module.exports = async function downloadReport(url, format, width, height, filen
         REPORT_TYPE
       );
     }
+    
+    spinner.info("test12");
 
     // force wait for any resize to load after the above DOM modification.
     await new Promise(resolve => setTimeout(resolve, 2000));
     await waitForDynamicContent(page, timeout);
+    spinner.info("test13");
     let buffer;
     spinner.text = `Downloading Report...`;
 
@@ -121,8 +128,10 @@ module.exports = async function downloadReport(url, format, width, height, filen
     } else if (format === FORMAT.CSV) {
       let catcher = page.waitForResponse(r => r.request().url().includes('/opensearch-with-long-numerals'));
       await page.reload({ waitUntil: 'networkidle0' });
-      await page.click('button[id="downloadReport"]');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await page.waitForSelector('button[id="downloadReport"]', {timeout: 5000}).then(async () => {
+        await page.click('button[id="downloadReport"]');
+      })
+      await new Promise(resolve => setTimeout(resolve, 5000));
       const is_enabled = await page.evaluate(() => document.querySelector('#generateCSV[disabled]') == null);
       // Check if generateCSV button is enabled.
       if (is_enabled) {
@@ -134,10 +143,14 @@ module.exports = async function downloadReport(url, format, width, height, filen
         process.exit(1);
       }
     }
+    
+    spinner.info("test14");
 
     const timeCreated = time.valueOf();
     const data = { timeCreated, dataUrl: buffer.toString('base64'), };
     await readStreamToFile(data.dataUrl, filename, format);
+    
+    spinner.info("test15");
 
     if (transport !== undefined) {
       const emailTemplateImageBuffer = await page.screenshot({
@@ -146,6 +159,8 @@ module.exports = async function downloadReport(url, format, width, height, filen
       const data = { timeCreated, dataUrl: emailTemplateImageBuffer.toString('base64'), };
       await readStreamToFile(data.dataUrl, emailbody, FORMAT.PNG);
     }
+    
+    spinner.info("test16");
 
     await browser.close();
     spinner.succeed('The report is downloaded');
@@ -167,17 +182,20 @@ const waitForDynamicContent = async (
 
   let i = 0;
   while (i++ <= maxChecks) {
-    let pageContent = await page.content();
-    let currentLength = pageContent.length;
+    let pageContent = await page.content().catch(
+      await new Promise(resolve => setTimeout(resolve, interval))
+    );
+    if (pageContent) {
+      let currentLength = pageContent.length;
 
-    previousLength === 0 || previousLength != currentLength
-      ? (passedChecks = 0)
-      : passedChecks++;
-    if (passedChecks >= checks) {
-      break;
+      previousLength === 0 || previousLength != currentLength
+        ? (passedChecks = 0)
+        : passedChecks++;
+      if (passedChecks >= checks) {
+        break;
+      }
+      previousLength = currentLength;
     }
-
-    previousLength = currentLength;
     await new Promise(resolve => setTimeout(resolve, interval));
   }
 };
@@ -336,42 +354,57 @@ const cognitoAuthentication = async (page, overridePage, url, username, password
 
 const openidAuthentication = async (page, url, username, password, tenant, multitenancy) => {
   await page.goto(url, { waitUntil: 'networkidle0' });
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  let refUrl;
-  await getUrl(url).then((value) => {
-    refUrl = value;
-  });
-  await page.type('[name="username"]', username);
-  //check realms home idp
-  const password_visible = await page.$('[name="password"]') !== null;
-  if(!password_visible) {
-    await page.click('[name="login"]');
+  spinner.info("test01");
+  await page.waitForSelector('[name="username"]', {timeout: 20000}).catch(async e => {
+    spinner.info("test02");
+    await page.reload({ waitUntil: 'networkidle0' });
     await new Promise(resolve => setTimeout(resolve, 5000));
-  }
+  });
+  spinner.info("test1");
+  await page.type('[name="username"]', username);
+  spinner.info("test2");
+  //check realms home idp
+  spinner.info("test3");
+  await page.waitForSelector('[name="password"]', {timeout: 5000}).catch(async e => {
+    await page.click('[name="login"]');
+    spinner.info("test4");
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  });
+  spinner.info("test5");
   await page.type('[name="password"]', password);
+  spinner.info("test6");
   await page.click('[name="login"]')
+  spinner.info("test7");
   await new Promise(resolve => setTimeout(resolve, 10000));
   await page.goto(url, { waitUntil: 'networkidle0' });
-  const tenantSelection = await page.$('Select your tenant');
-  try {
-    if (multitenancy === true && tenantSelection !== null) {
-      if (tenant === 'global' || tenant === 'private') {
-        await page.click('label[for=' + tenant + ']');
+  spinner.info("test8");
+  let tenantSelection = false;
+  await page.waitForSelector('Select your tenant', {timeout: 5000}).then(async () => {
+    try {
+      if (multitenancy === true) {
+        tenantSelection = true;
+        if (tenant === 'global' || tenant === 'private') {
+          await page.click('label[for=' + tenant + ']');
+        } else {
+          await page.click('label[for="custom"]');
+          await page.click('button[data-test-subj="comboBoxToggleListButton"]');
+          await page.type('input[data-test-subj="comboBoxSearchInput"]', tenant);
+        }
       } else {
-        await page.click('label[for="custom"]');
-        await page.click('button[data-test-subj="comboBoxToggleListButton"]');
-        await page.type('input[data-test-subj="comboBoxSearchInput"]', tenant);
+        if ((await page.$('[name="login"]')) !== null)
+          throw new Error('Invalid credentials');
       }
-    } else {
-      if ((await page.$('[name="login"]')) !== null)
-        throw new Error('Invalid credentials');
     }
-  }
-  catch (err) {
-    spinner.fail('Invalid username or password');
-    exit(1);
-  }
-  if (multitenancy === true && tenantSelection !== null) {
+    catch (err) {
+      spinner.fail('Invalid username or password');
+      exit(1);
+    }
+  }).catch(async e => {
+    //no tenant selection
+  });
+  spinner.info("test9");
+  
+  if (multitenancy === true && tenantSelection) {
     await page.waitForTimeout(5000);
     await page.click('button[data-test-subj="confirm"]');
     await page.waitForTimeout(25000);
