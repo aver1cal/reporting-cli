@@ -38,6 +38,10 @@ module.exports = async function downloadReport(url, format, width, height, filen
     page.setDefaultTimeout(timeout);
     overridePage.setDefaultNavigationTimeout(0);
     overridePage.setDefaultTimeout(timeout);
+    await page._client().send("Network.enable", {
+      maxResourceBufferSize: 1024 * 1204 * 50,
+      maxTotalBufferSize: 1024 * 1204 * 200,
+    });
 
     // auth 
     if (authType !== undefined && authType !== AUTH.NONE && username !== undefined && password !== undefined) {
@@ -119,12 +123,12 @@ module.exports = async function downloadReport(url, format, width, height, filen
         fullPage: true,
       });
     } else if (format === FORMAT.CSV) {
-      let catcher = page.waitForResponse(r => r.request().url().includes('/opensearch-with-long-numerals'));
-      await page.reload({ waitUntil: 'networkidle0' });
-      await page.waitForSelector('button[id="downloadReport"]', {timeout: 5000}).then(async () => {
+      await page.reload();
+      let catcher = page.waitForResponse(r => r.request().url().includes('/opensearch-with-long-numerals'), { waitUntil: 'networkidle0' });
+      await page.waitForSelector('button[id="downloadReport"]', {timeout: 15000}).then(async () => {
         await page.click('button[id="downloadReport"]');
       })
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
       const is_enabled = await page.evaluate(() => document.querySelector('#generateCSV[disabled]') == null);
       // Check if generateCSV button is enabled.
       if (is_enabled) {
@@ -343,17 +347,17 @@ const openidAuthentication = async (page, url, username, password, tenant, multi
   await page.goto(url, { waitUntil: 'networkidle0' });
   await page.waitForSelector('[name="username"]', {timeout: 20000}).catch(async e => {
     await page.reload({ waitUntil: 'networkidle0' });
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
   });
   await page.type('[name="username"]', username);
   //check for realms home idp
   await page.waitForSelector('[name="password"]', {timeout: 5000}).catch(async e => {
     await page.click('[name="login"]');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
   });
   await page.type('[name="password"]', password);
   await page.click('[name="login"]')
-  await new Promise(resolve => setTimeout(resolve, 10000));
+  await new Promise(resolve => setTimeout(resolve, 5000));
   await page.goto(url, { waitUntil: 'networkidle0' });
   let tenantSelection = false;
   await page.waitForSelector('Select your tenant', {timeout: 5000}).then(async () => {
@@ -386,7 +390,6 @@ const openidAuthentication = async (page, url, username, password, tenant, multi
     await page.waitForTimeout(25000);
   }
   await page.goto(url, { waitUntil: 'networkidle0' });
-  await page.reload({ waitUntil: 'networkidle0' });
 }
 
 const readStreamToFile = async (
