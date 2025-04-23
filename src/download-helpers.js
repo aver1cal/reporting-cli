@@ -38,6 +38,10 @@ module.exports = async function downloadReport(url, format, width, height, filen
     page.setDefaultTimeout(timeout);
     overridePage.setDefaultNavigationTimeout(0);
     overridePage.setDefaultTimeout(timeout);
+    await page._client().send("Network.enable", {
+      maxResourceBufferSize: 1024 * 1204 * 50,
+      maxTotalBufferSize: 1024 * 1204 * 200,
+    });
 
     // auth 
     if (authType !== undefined && authType !== AUTH.NONE && username !== undefined && password !== undefined) {
@@ -119,16 +123,18 @@ module.exports = async function downloadReport(url, format, width, height, filen
         fullPage: true,
       });
     } else if (format === FORMAT.CSV) {
-      await page.click('button[id="downloadReport"]');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await page.reload();
+      let catcher = page.waitForResponse(r => r.request().url().includes('/opensearch-with-long-numerals'), { waitUntil: 'networkidle0' });
+      await page.waitForSelector('button[id="downloadReport"]', {timeout: 15000}).then(async () => {
+        await page.click('button[id="downloadReport"]');
+      })
+      await new Promise(resolve => setTimeout(resolve, 3000));
       const is_enabled = await page.evaluate(() => document.querySelector('#generateCSV[disabled]') == null);
       // Check if generateCSV button is enabled.
       if (is_enabled) {
-        let catcher = page.waitForResponse(r => r.request().url().includes('/api/reporting/generateReport'));
-        page.click('button[id="generateCSV"]');
         let response = await catcher;
         let payload = await response.json();
-        buffer = payload.data;
+        buffer = await formatCsv(payload.rawResponse.hits.hits);
       } else {
         spinner.fail('Please save search and retry');
         process.exit(1);
@@ -167,17 +173,20 @@ const waitForDynamicContent = async (
 
   let i = 0;
   while (i++ <= maxChecks) {
-    let pageContent = await page.content();
-    let currentLength = pageContent.length;
+    let pageContent = await page.content().catch(
+      await new Promise(resolve => setTimeout(resolve, interval))
+    );
+    if (pageContent) {
+      let currentLength = pageContent.length;
 
-    previousLength === 0 || previousLength != currentLength
-      ? (passedChecks = 0)
-      : passedChecks++;
-    if (passedChecks >= checks) {
-      break;
+      previousLength === 0 || previousLength != currentLength
+        ? (passedChecks = 0)
+        : passedChecks++;
+      if (passedChecks >= checks) {
+        break;
+      }
+      previousLength = currentLength;
     }
-
-    previousLength = currentLength;
     await new Promise(resolve => setTimeout(resolve, interval));
   }
 };
@@ -338,17 +347,17 @@ const openidAuthentication = async (page, url, username, password, tenant, multi
   await page.goto(url, { waitUntil: 'networkidle0' });
   await page.waitForSelector('[name="username"]', {timeout: 20000}).catch(async e => {
     await page.reload({ waitUntil: 'networkidle0' });
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
   });
   await page.type('[name="username"]', username);
   //check for realms home idp
   await page.waitForSelector('[name="password"]', {timeout: 5000}).catch(async e => {
     await page.click('[name="login"]');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
   });
   await page.type('[name="password"]', password);
   await page.click('[name="login"]')
-  await new Promise(resolve => setTimeout(resolve, 10000));
+  await new Promise(resolve => setTimeout(resolve, 5000));
   await page.goto(url, { waitUntil: 'networkidle0' });
   let tenantSelection = false;
   await page.waitForSelector('Select your tenant', {timeout: 5000}).then(async () => {
@@ -381,7 +390,6 @@ const openidAuthentication = async (page, url, username, password, tenant, multi
     await page.waitForTimeout(25000);
   }
   await page.goto(url, { waitUntil: 'networkidle0' });
-  await page.reload({ waitUntil: 'networkidle0' });
 }
 
 const readStreamToFile = async (
@@ -404,3 +412,30 @@ const readStreamToFile = async (
     })
   }
 };
+
+const formatCsv = async (data) => {
+  let columns = [];
+  let content = "";
+  if (data) {
+    Object.keys(data[0].fields).forEach(field => {
+      if (field.startsWith('-')) columns.push(field);
+    });
+    content += columns.toString() + "\n";
+    data.forEach(document => {
+      columns.map(column => {
+        content += escape(String(document.fields[column])) + ','
+      })
+      content = content.slice(0, -1) + "\n";
+    })
+  }
+  return content;
+};
+
+function escape(val) {
+  const nonAlphaNumRE = /[^a-zA-Z0-9]/;
+  const allDoubleQuoteRE = /"/g;
+  if (nonAlphaNumRE.test(val)) {
+    val = '"' + val.replace(allDoubleQuoteRE, '""') + '"';
+  }
+  return val;
+}

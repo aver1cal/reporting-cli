@@ -9,7 +9,7 @@ const { getCommandArguments, getEventArguments } = require('./arguments.js');
 
 module.exports = async function run(args) {
     var options = args !== undefined ? await getEventArguments(args) : await getCommandArguments();
-    if (args !== undefined) {
+    if (options !== null) {
         options.filename = '/tmp/' + options.filename;
         options.emailbody = '/tmp/' + options.emailbody;
     }
